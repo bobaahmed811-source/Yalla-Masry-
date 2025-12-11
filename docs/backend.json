@@ -1,0 +1,573 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the EdTech platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the user."
+        },
+        "alias": {
+          "type": "string",
+          "description": "The user's Pharaonic alias."
+        },
+        "registrationDate": {
+          "type": "string",
+          "description": "Date and time the user registered.",
+          "format": "date-time"
+        },
+        "nilePoints": {
+          "type": "number",
+          "description": "Gamification points earned by the user."
+        },
+        "goal": {
+            "type": "string",
+            "description": "The primary learning goal of the user (e.g., 'social', 'business')."
+        },
+        "level": {
+            "type": "string",
+            "description": "The self-assessed skill level of the user (e.g., 'beginner', 'intermediate')."
+        },
+        "badges": {
+          "type": "array",
+          "description": "A list of badge names the user has earned.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "alias",
+        "name"
+      ]
+    },
+    "Course": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Course",
+      "type": "object",
+      "description": "Represents a course offered on the EdTech platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Course entity."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the course."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the course content."
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description"
+      ]
+    },
+    "Lesson": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Lesson",
+      "type": "object",
+      "description": "Represents a lesson within a course.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Lesson entity."
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to Course. (Relationship: Course 1:N Lesson)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the lesson."
+        },
+        "content": {
+          "type": "string",
+          "description": "Content of the lesson (e.g., text, video URL)."
+        },
+        "order": {
+          "type": "number",
+          "description": "The order of the lesson in the course."
+        }
+      },
+      "required": [
+        "id",
+        "courseId",
+        "title",
+        "content",
+        "order"
+      ]
+    },
+    "Quiz": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Quiz",
+      "type": "object",
+      "description": "Represents a quiz within a course.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Quiz entity."
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to Course. (Relationship: Course 1:N Quiz)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the quiz."
+        },
+        "questions": {
+          "type": "array",
+          "description": "List of question ids related to the quiz.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "courseId",
+        "title",
+        "questions"
+      ]
+    },
+    "Question": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Question",
+      "type": "object",
+      "description": "Represents a question within a quiz.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Question entity."
+        },
+        "quizId": {
+          "type": "string",
+          "description": "Reference to Quiz. (Relationship: Quiz 1:N Question)"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text of the question."
+        },
+        "options": {
+          "type": "array",
+          "description": "Available answer options for the question.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "correctAnswer": {
+          "type": "string",
+          "description": "The correct answer to the question."
+        }
+      },
+      "required": [
+        "id",
+        "quizId",
+        "text",
+        "options",
+        "correctAnswer"
+      ]
+    },
+    "Assignment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Assignment",
+      "type": "object",
+      "description": "Represents an assignment within a course.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Assignment entity."
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to Course. (Relationship: Course 1:N Assignment)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the assignment."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the assignment."
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Due date and time for the assignment.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "courseId",
+        "title",
+        "description",
+        "dueDate"
+      ]
+    },
+    "Progress": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Progress",
+      "type": "object",
+      "description": "Represents a students progress in a course.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Progress entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Progress)"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to Course. (Relationship: Course 1:N Progress)"
+        },
+        "completedLessons": {
+          "type": "array",
+          "description": "List of lesson IDs that the user has completed.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "currentLessonId": {
+          "type": "string",
+          "description": "The ID of the next lesson the user should take."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "courseId"
+      ]
+    },
+    "Instructor": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Instructor",
+      "type": "object",
+      "description": "Represents an instructor who creates and manages courses.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Instructor entity."
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "The name of the teacher."
+        },
+        "photo": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the teacher's profile picture."
+        },
+        "introVideo": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the teacher's introductory video."
+        },
+        "shortBio": {
+          "type": "string",
+          "description": "A short biography of the teacher."
+        },
+        "languages": {
+          "type": "array",
+          "description": "Languages spoken by the teacher.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "specialties": {
+          "type": "array",
+          "description": "The teacher's areas of specialization.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Children",
+              "Women",
+              "Egyptian Dialect",
+              "Conversation",
+              "Quran"
+            ]
+          }
+        },
+        "availability": {
+          "type": "string",
+          "description": "A text description of the teacher's available days and hours."
+        },
+        "lessonPrice": {
+          "type": "number",
+          "description": "The price for a single lesson."
+        },
+        "bookingLink": {
+          "type": "string",
+          "format": "uri",
+          "description": "An external link for booking (e.g., Gumroad, Calendly)."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the instructor.",
+          "format": "email"
+        },
+        "character": {
+          "type": "string",
+          "description": "An emoji or character symbol representing the instructor."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The main subject the instructor teaches."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "Inactive"
+          ],
+          "description": "The current status of the instructor."
+        },
+        "averageRating": {
+          "type": "number",
+          "description": "The instructor's average rating from student reviews."
+        },
+        "totalReviews": {
+          "type": "number",
+          "description": "The total number of reviews the instructor has received."
+        }
+      },
+      "required": [
+        "teacherName",
+        "shortBio",
+        "email",
+        "lessonPrice"
+      ]
+    },
+    "ChatMessage": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ChatMessage",
+      "type": "object",
+      "description": "Represents a private chat message between two users.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ChatMessage entity."
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N ChatMessage (sender))"
+        },
+        "receiverId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N ChatMessage (receiver))"
+        },
+        "message": {
+          "type": "string",
+          "description": "Content of the chat message."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the message was sent.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "senderId",
+        "receiverId",
+        "message",
+        "timestamp"
+      ]
+    },
+    "CommunityMessage": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CommunityMessage",
+      "type": "object",
+      "description": "Represents a public message in a community chat room.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the CommunityMessage entity."
+        },
+        "senderId": {
+          "type": "string",
+          "description": "The UID of the user who sent the message."
+        },
+        "senderAlias": {
+          "type": "string",
+          "description": "The alias of the user at the time of sending."
+        },
+        "text": {
+          "type": "string",
+          "description": "Content of the chat message."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Server timestamp of when the message was sent.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "senderId",
+        "senderAlias",
+        "text",
+        "timestamp"
+      ]
+    },
+    "AIInteraction": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AIInteraction",
+      "type": "object",
+      "description": "Represents an interaction with the AI tutoring assistant.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the AIInteraction entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N AIInteraction)"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question asked to the AI assistant."
+        },
+        "answer": {
+          "type": "string",
+          "description": "The AI assistant's response."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of the interaction.",
+          "format": "date-time"
+        },
+        "courseId": {
+          "type": "string",
+          "description": "Reference to the Course. (Relationship: Course 1:N AIInteraction). Optional as could be a general question."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "question",
+        "answer",
+        "timestamp"
+      ]
+    },
+    "Purchase": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Purchase",
+      "type": "object",
+      "description": "Represents a purchase of a product within the EdTech platform.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Purchase entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Purchase)"
+        },
+        "productId": {
+          "type": "string",
+          "description": "Identifier for the product purchased. This could reference a Course or other digital asset."
+        },
+        "productName": {
+            "type": "string",
+            "description": "Denormalized name of the product for display purposes."
+        },
+        "purchaseDate": {
+          "type": "string",
+          "description": "Date and time of the purchase.",
+          "format": "date-time"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price of the product at the time of purchase."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the purchase (e.g., 'Awaiting Payment', 'Completed', 'Refunded')."
+        },
+        "isGift": {
+          "type": "boolean",
+          "description": "Indicates if the purchase is a gift for another user."
+        },
+        "recipientEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "The email address of the gift recipient."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "productId",
+        "productName",
+        "purchaseDate",
+        "price",
+        "status"
+      ]
+    },
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a digital product available for purchase in the store.",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the Product." },
+        "name": { "type": "string", "description": "Name of the product." },
+        "description": { "type": "string", "description": "A short description of the product." },
+        "price": { "type": "number", "description": "The price of the product." },
+        "icon": { "type": "string", "description": "Lucide icon name to represent the product (e.g., 'ScrollText', 'Ankh')." }
+      },
+      "required": ["id", "name", "description", "price", "icon"]
+    },
+    "Review": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Review",
+      "type": "object",
+      "description": "Represents a student's review of an instructor.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Review."
+        },
+        "instructorId": {
+          "type": "string",
+          "description": "The ID of the instructor being reviewed."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "The ID of the student who wrote the review."
+        },
+        "rating": {
+          "type": "number",
+          "description": "The rating given by the student, typically from 1 to 5."
+        },
+        "comment": {
+          "type": "string",
+          "description": "The text content of the review."
+        },
+        "date": {
+          "type": "string",
+          "description": "The date the review was submitted.",
+          "format": "date-time"
+        }
+      },
+      "required
