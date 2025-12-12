@@ -1,0 +1,554 @@
+'use client';
+
+import React, { useEffect, useRef, useCallback, useState } from 'react';
+import * as THREE from 'three';
+import { ARTIFACT_DATA, type Artifacts } from '@/lib/artifacts';
+import { useToast } from '@/hooks/use-toast';
+import { getStorytellerAudio } from '@/app/ai-actions';
+
+
+export default function MuseumPage() {
+    const mountRef = useRef<HTMLDivElement>(null);
+    const markersContainerRef = useRef<HTMLDivElement>(null);
+    const infoPanelRef = useRef<HTMLDivElement>(null);
+    const reportModalRef = useRef<HTMLDivElement>(null);
+    const blockerRef = useRef<HTMLDivElement>(null);
+    const joystickRef = useRef<HTMLDivElement>(null);
+    const joystickHandleRef = useRef<HTMLDivElement>(null);
+    const { toast } = useToast();
+
+    // Use useState for artifact data to make it reactive
+    const [artifacts, setArtifacts] = useState<Artifacts>(ARTIFACT_DATA);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+
+
+    const state = useRef({
+        camera: null as THREE.PerspectiveCamera | null,
+        scene: null as THREE.Scene | null,
+        renderer: null as THREE.WebGLRenderer | null,
+        particles: null as THREE.Points | null,
+        
+        moveForward: false,
+        moveBackward: false,
+        moveLeft: false,
+        moveRight: false,
+        isMoving: false,
+        
+        isBlocked: true,
+        isReportVisible: false,
+
+        isDragging: false,
+        lon: 0,
+        lat: 0,
+        onMouseDownMouseX: 0,
+        onMouseDownMouseY: 0,
+        onMouseDownLon: 0,
+        onMouseDownLat: 0,
+        
+        forwardVector: new THREE.Vector3(0, 0, -1),
+        rightVector: new THREE.Vector3(1, 0, 0),
+        euler: new THREE.Euler(0, 0, 0, 'YXZ'),
+        
+        lastTime: performance.now(),
+
+        currentArtifactName: null as string | null,
+
+        markersMap: {} as { [key: string]: HTMLDivElement },
+        tempVector: new THREE.Vector3(),
+
+        joystickActive: false,
+        joystickStartX: 0,
+        joystickStartY: 0,
+
+    }).current;
+
+    const alertMessage = useCallback((message: string, type: 'error' | 'success' | 'info') => {
+        const messageContainer = document.createElement('div');
+        const bgColor = type === 'error' ? 'bg-red-700' : (type === 'success' ? 'bg-green-700' : 'bg-blue-700');
+        messageContainer.className = `alert-message fixed bottom-4 right-4 text-white font-bold ${bgColor} p-3 rounded-lg shadow-xl z-[100] transition-opacity duration-300`;
+        messageContainer.textContent = message;
+
+        document.querySelectorAll('.alert-message').forEach(el => el.remove());
+        document.body.appendChild(messageContainer);
+
+        setTimeout(() => {
+            messageContainer.style.opacity = '0';
+            setTimeout(() => messageContainer.remove(), 300);
+        }, 4000);
+    }, []);
+
+    const hideInfoPanel = useCallback(() => {
+        if (infoPanelRef.current) {
+            infoPanelRef.current.classList.remove('visible');
+        }
+        state.isBlocked = false;
+        if (state.renderer) {
+            state.renderer.domElement.focus();
+        }
+        state.isDragging = false;
+    }, [state]);
+
+    const showInfoPanel = useCallback((artifactName: string) => {
+        const data = artifacts[artifactName];
+        if (!data || !infoPanelRef.current) return;
+
+        state.currentArtifactName = artifactName;
+
+        const panel = infoPanelRef.current;
+        (panel.querySelector('#artifact-title') as HTMLElement).textContent = data.title;
+        (panel.querySelector('#artifact-description') as HTMLElement).textContent = data.description;
+        (panel.querySelector('#puzzle-text') as HTMLElement).textContent = data.puzzle;
+        panel.querySelector('#puzzle-content')?.classList.add('hidden');
+        
+        panel.classList.add('visible');
+        state.isBlocked = true;
+    }, [state, artifacts]);
+    
+    const updateMarkers = useCallback(() => {
+        if (!state.camera || !state.scene) return;
+
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const MAX_MARKER_DISTANCE = 1000;
+
+        for (const name in artifacts) {
+            const obj = state.scene.getObjectByName(`exhibit-${name}`);
+            if (obj && obj.userData.markerPosition) {
+                const marker = state.markersMap[name];
+                if (!marker) continue;
+
+                state.tempVector.copy(obj.userData.markerPosition);
+                state.tempVector.project(state.camera);
+
+                const markerX = (state.tempVector.x * 0.5 + 0.5) * width;
+                const markerY = (state.tempVector.y * -0.5 + 0.5) * height;
+
+                const distance = state.camera.position.distanceTo(obj.userData.markerPosition);
+
+                if (state.tempVector.z < 1 && distance < MAX_MARKER_DISTANCE) {
+                    marker.style.display = 'flex';
+                    marker.style.left = `${markerX}px`;
+                    marker.style.top = `${markerY}px`;
+
+                    const scale = Math.max(0.9, Math.min(1.5, 300 / distance));
+                    const opacity = Math.max(0.5, Math.min(1.0, 200 / distance));
+
+                    marker.style.transform = `translate(-50%, -50%) scale(${scale})`;
+                    marker.style.opacity = opacity.toString();
+                } else {
+                    marker.style.display = 'none';
+                }
+            }
+        }
+    }, [state, artifacts]);
+
+    const animate = useCallback((currentTime: number) => {
+        requestAnimationFrame(animate);
+        if (!state.renderer || !state.scene || !state.camera) return;
+
+        try {
+            const delta = (currentTime - state.lastTime) / 1000;
+            state.lastTime = currentTime;
+
+            state.euler.y = THREE.MathUtils.degToRad(state.lon);
+            state.euler.x = THREE.MathUtils.degToRad(state.lat);
+            state.camera.quaternion.setFromEuler(state.euler);
+            
+            // Animate particles
+            if (state.particles) {
+                state.particles.rotation.y += delta * 0.05;
+            }
+
+            const speed = 150.0;
+            if (!state.isBlocked && !state.isReportVisible && (state.isMoving || state.joystickActive)) {
+                const forward = state.forwardVector.clone().applyQuaternion(state.camera.quaternion);
+                forward.y = 0;
+                forward.normalize();
+
+                const right = state.rightVector.clone().applyQuaternion(state.camera.quaternion);
+                right.y = 0;
+                right.normalize();
+
+                const moveSpeed = speed * delta;
+                if (state.moveForward) state.camera.position.addScaledVector(forward, moveSpeed);
+                if (state.moveBackward) state.camera.position.addScaledVector(forward, -moveSpeed);
+                if (state.moveRight) state.camera.position.addScaledVector(right, moveSpeed);
+                if (state.moveLeft) state.camera.position.addScaledVector(right, -moveSpeed);
+            }
+
+            updateMarkers();
+
+            state.renderer.render(state.scene, state.camera);
+
+        } catch (error) {
+            console.error("Error during animation frame:", error);
+        }
+    }, [state, updateMarkers]);
+
+    useEffect(() => {
+        if (!mountRef.current) return;
+        const currentMount = mountRef.current;
+
+        const init = () => {
+            try {
+                state.scene = new THREE.Scene();
+                state.scene.background = new THREE.Color(0x000000);
+                state.scene.fog = new THREE.Fog(0x000000, 100, 400);
+
+                state.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+                state.camera.position.set(0, 10, 0);
+                state.lon = 0;
+                state.lat = 0;
+
+                state.renderer = new THREE.WebGLRenderer({ antialias: true });
+                state.renderer.setPixelRatio(window.devicePixelRatio);
+                state.renderer.setSize(window.innerWidth, window.innerHeight);
+                state.renderer.domElement.tabIndex = 0;
+                currentMount.appendChild(state.renderer.domElement);
+
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.5);
+                state.scene.add(ambientLight);
+                const directionalLight = new THREE.DirectionalLight(0xFFDAB9, 0.8);
+                directionalLight.position.set(50, 100, 50);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 1024;
+                directionalLight.shadow.mapSize.height = 1024;
+                state.scene.add(directionalLight);
+                state.renderer.shadowMap.enabled = true;
+                state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+                // Museum Geometry
+                const wallSize = 500;
+                const wallHeight = 50;
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(wallSize, wallSize), new THREE.MeshStandardMaterial({ color: 0x2e2e2e, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.8 }));
+                floor.rotation.x = -Math.PI / 2;
+                floor.receiveShadow = true;
+                state.scene.add(floor);
+                const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x4a2a10, side: THREE.DoubleSide });
+                [{ x: 0, z: -wallSize / 2, rotY: 0 }, { x: 0, z: wallSize / 2, rotY: Math.PI }, { x: wallSize / 2, z: 0, rotY: -Math.PI / 2 }, { x: -wallSize / 2, z: 0, rotY: Math.PI / 2 }].forEach(w => {
+                    const wall = new THREE.Mesh(new THREE.PlaneGeometry(wallSize, wallHeight), wallMaterial);
+                    wall.position.set(w.x, wallHeight / 2, w.z);
+                    wall.rotation.y = w.rotY;
+                    wall.receiveShadow = true;
+                    state.scene!.add(wall);
+                });
+                const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(wallSize, wallSize), new THREE.MeshStandardMaterial({ color: 0x111111, side: THREE.DoubleSide }));
+                ceiling.position.y = wallHeight;
+                ceiling.rotation.x = Math.PI / 2;
+                state.scene.add(ceiling);
+                
+                // Magical Dust Particles
+                const particleCount = 5000;
+                const particlesGeometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] = (Math.random() - 0.5) * wallSize;
+                    positions[i * 3 + 1] = Math.random() * wallHeight;
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * wallSize;
+                }
+                particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const particlesMaterial = new THREE.PointsMaterial({
+                    color: 0xFFD700,
+                    size: 0.2,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true,
+                    opacity: 0.5,
+                });
+                state.particles = new THREE.Points(particlesGeometry, particlesMaterial);
+                state.scene.add(state.particles);
+
+                // Exhibits
+                for (const name in artifacts) {
+                    const data = artifacts[name as keyof typeof artifacts];
+                    
+                    const base = new THREE.Mesh(new THREE.BoxGeometry(30, 10, 30), new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.5, roughness: 0.5 }));
+                    base.position.copy(data.position);
+                    base.position.y = 5;
+                    base.receiveShadow = true;
+                    base.castShadow = true;
+                    base.name = `exhibit-${name}`;
+
+                    const artifactMesh = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10), new THREE.MeshStandardMaterial({ color: data.goal ? 0xFF0000 : 0xFFD700, metalness: 0.9, roughness: 0.1, emissive: data.goal ? 0x990000 : 0xAA8800, emissiveIntensity: 0.5 }));
+                    artifactMesh.position.y = 10;
+                    base.add(artifactMesh);
+
+                    // Add a subtle glow
+                    const pointLight = new THREE.PointLight(data.goal ? 0xFF4444 : 0xFFD700, 1.5, 50);
+                    pointLight.position.set(0, 15, 0);
+                    base.add(pointLight);
+
+                    const glassCase = new THREE.Mesh(new THREE.BoxGeometry(32, 25, 32), new THREE.MeshPhysicalMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.1, roughness: 0, metalness: 0, transmission: 0.9, reflectivity: 0.5 }));
+                    glassCase.position.y = 17.5;
+                    base.add(glassCase);
+
+                    base.userData.markerPosition = base.position.clone();
+                    base.userData.markerPosition.y += 35;
+                    state.scene!.add(base);
+                }
+                
+                // Markers
+                const container = markersContainerRef.current;
+                if(container){
+                    for (const name in artifacts) {
+                        const data = artifacts[name as keyof typeof artifacts];
+                        const markerDiv = document.createElement('div');
+                        markerDiv.className = 'artifact-marker';
+                        markerDiv.id = `marker-${name}`;
+                        markerDiv.innerHTML = `<i class="${data.icon}"></i><span class="marker-title">${data.title}</span>`;
+                        markerDiv.style.display = 'none';
+                        markerDiv.onclick = () => showInfoPanel(name);
+                        container.appendChild(markerDiv);
+                        state.markersMap[name] = markerDiv;
+                    }
+                }
+
+                animate(performance.now());
+
+            } catch (error: any) {
+                alertMessage("فشل تشغيل المتحف: " + error.message, 'error');
+            }
+        };
+
+        init();
+
+        const onStartClick = () => {
+            if (blockerRef.current) blockerRef.current.classList.add('hidden');
+            if (joystickRef.current) joystickRef.current.classList.remove('hidden');
+            state.isBlocked = false;
+            if (state.renderer) state.renderer.domElement.focus();
+            document.getElementById('report-button')?.classList.remove('hidden');
+            alertMessage('بدأ التجول! استخدمي الماوس أو اللمس للدوران والنظر حولكِ.', 'success');
+        };
+
+        const onMouseDown = (event: MouseEvent) => {
+            if (state.isBlocked || state.isReportVisible) return;
+            event.preventDefault();
+            state.isDragging = true;
+            state.onMouseDownMouseX = event.clientX;
+            state.onMouseDownMouseY = event.clientY;
+            state.onMouseDownLon = state.lon;
+            state.onMouseDownLat = state.lat;
+        };
+        const onMouseMove = (event: MouseEvent) => {
+            if (state.isBlocked || state.isReportVisible || !state.isDragging) return;
+            event.preventDefault();
+            const deltaX = event.clientX - state.onMouseDownMouseX;
+            const deltaY = event.clientY - state.onMouseDownMouseY;
+            state.lon = state.onMouseDownLon - deltaX * 0.1;
+            state.lat = Math.max(-85, Math.min(85, state.onMouseDownLat - deltaY * 0.1));
+        };
+        const onMouseUp = () => {
+            if (state.isBlocked || state.isReportVisible) return;
+            state.isDragging = false;
+        };
+
+        const onTouchStart = (event: TouchEvent) => {
+            if (state.isBlocked || state.isReportVisible || event.touches.length !== 1) return;
+            event.preventDefault();
+            state.isDragging = true;
+            const touch = event.touches[0];
+            state.onMouseDownMouseX = touch.clientX;
+            state.onMouseDownMouseY = touch.clientY;
+            state.onMouseDownLon = state.lon;
+            state.onMouseDownLat = state.lat;
+        };
+        const onTouchMove = (event: TouchEvent) => {
+            if (state.isBlocked || state.isReportVisible || !state.isDragging || event.touches.length !== 1) return;
+            event.preventDefault();
+            const touch = event.touches[0];
+            const deltaX = touch.clientX - state.onMouseDownMouseX;
+            const deltaY = touch.clientY - state.onMouseDownMouseY;
+            state.lon = state.onMouseDownLon - deltaX * 0.2;
+            state.lat = Math.max(-85, Math.min(85, state.onMouseDownLat - deltaY * 0.2));
+        };
+        const onTouchEnd = () => {
+            if (state.isBlocked || state.isReportVisible) return;
+            state.isDragging = false;
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) event.preventDefault();
+            if (state.isBlocked || state.isReportVisible) return;
+            state.isMoving = true;
+            switch (event.code) {
+                case 'KeyW': state.moveForward = true; break;
+                case 'KeyA': state.moveLeft = true; break;
+                case 'KeyS': state.moveBackward = true; break;
+                case 'KeyD': state.moveRight = true; break;
+            }
+        };
+        const onKeyUp = (event: KeyboardEvent) => {
+            if (state.isBlocked || state.isReportVisible) return;
+            switch (event.code) {
+                case 'KeyW': state.moveForward = false; break;
+                case 'KeyA': state.moveLeft = false; break;
+                case 'KeyS': state.moveBackward = false; break;
+                case 'KeyD': state.moveRight = false; break;
+            }
+            if (!state.moveForward && !state.moveBackward && !state.moveLeft && !state.moveRight) {
+                state.isMoving = false;
+            }
+        };
+
+        const onWindowResize = () => {
+            if (state.camera && state.renderer) {
+                state.camera.aspect = window.innerWidth / window.innerHeight;
+                state.camera.updateProjectionMatrix();
+                state.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        };
+        
+        // --- Joystick Logic ---
+        const joystickElement = joystickRef.current;
+        const onJoystickStart = (e: TouchEvent | MouseEvent) => {
+            e.preventDefault();
+            state.joystickActive = true;
+            const touch = 'touches' in e ? e.touches[0] : e;
+            state.joystickStartX = touch.clientX;
+            state.joystickStartY = touch.clientY;
+        };
+
+        const onJoystickMove = (e: TouchEvent | MouseEvent) => {
+            if (!state.joystickActive) return;
+            e.preventDefault();
+            
+            const handle = joystickHandleRef.current;
+            if (!handle) return;
+
+            const touch = 'touches' in e ? e.touches[0] : e;
+            const deltaX = touch.clientX - state.joystickStartX;
+            const deltaY = touch.clientY - state.joystickStartY;
+            const distance = Math.min(60, Math.sqrt(deltaX * deltaX + deltaY * deltaY));
+            const angle = Math.atan2(deltaY, deltaX);
+
+            handle.style.transform = `translate(${distance * Math.cos(angle)}px, ${distance * Math.sin(angle)}px)`;
+
+            // Dead zone
+            if (distance < 10) {
+                 state.moveForward = state.moveBackward = state.moveLeft = state.moveRight = false;
+                 return;
+            }
+
+            // Determine direction
+            const threshold = Math.PI / 4; // 45 degrees
+            state.moveForward = (angle > -Math.PI + threshold && angle < -threshold);
+            state.moveBackward = (angle > threshold && angle < Math.PI - threshold);
+            state.moveLeft = (angle >= Math.PI - threshold || angle <= -Math.PI + threshold);
+            state.moveRight = (angle >= -threshold && angle <= threshold);
+        };
+
+        const onJoystickEnd = (e: TouchEvent | MouseEvent) => {
+            e.preventDefault();
+            state.joystickActive = false;
+            state.moveForward = state.moveBackward = state.moveLeft = state.moveRight = false;
+            if (joystickHandleRef.current) {
+                joystickHandleRef.current.style.transform = 'translate(0px, 0px)';
+            }
+        };
+
+        const rendererDom = state.renderer?.domElement;
+        document.getElementById('start-button')?.addEventListener('click', onStartClick);
+        if (rendererDom) {
+            rendererDom.addEventListener('mousedown', onMouseDown);
+            rendererDom.addEventListener('mousemove', onMouseMove);
+            rendererDom.addEventListener('mouseup', onMouseUp);
+            rendererDom.addEventListener('touchstart', onTouchStart, { passive: false });
+            rendererDom.addEventListener('touchmove', onTouchMove, { passive: false });
+            rendererDom.addEventListener('touchend', onTouchEnd);
+        }
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+        window.addEventListener('resize', onWindowResize);
+        
+        if (joystickElement) {
+            joystickElement.addEventListener('touchstart', onJoystickStart, { passive: false });
+            joystickElement.addEventListener('touchmove', onJoystickMove, { passive: false });
+            joystickElement.addEventListener('touchend', onJoystickEnd);
+        }
+        
+        return () => {
+            window.removeEventListener('resize', onWindowResize);
+            document.removeEventListener('keydown', onKeyDown);
+            document.removeEventListener('keyup', onKeyUp);
+            if (rendererDom) {
+                rendererDom.removeEventListener('mousedown', onMouseDown);
+                rendererDom.removeEventListener('mousemove', onMouseMove);
+                rendererDom.removeEventListener('mouseup', onMouseUp);
+                rendererDom.removeEventListener('touchstart', onTouchStart);
+                rendererDom.removeEventListener('touchmove', onTouchMove);
+                rendererDom.removeEventListener('touchend', onTouchEnd);
+                try{
+                    currentMount.removeChild(rendererDom);
+                } catch(e) {
+                    // ignore if already removed
+                }
+            }
+            if (joystickElement) {
+                joystickElement.removeEventListener('touchstart', onJoystickStart);
+                joystickElement.removeEventListener('touchmove', onJoystickMove);
+                joystickElement.removeEventListener('touchend', onJoystickEnd);
+            }
+        };
+    }, [state, animate, alertMessage, showInfoPanel, hideInfoPanel, artifacts]);
+
+    const handleTogglePuzzle = () => {
+        const puzzleContent = infoPanelRef.current?.querySelector('#puzzle-content');
+        puzzleContent?.classList.toggle('hidden');
+        if (state.currentArtifactName) {
+             setArtifacts(prev => {
+                const newArtifacts = { ...prev };
+                newArtifacts[state.currentArtifactName!].isExplored = true;
+                return newArtifacts;
+             });
+        }
+    };
+    
+    const speakArtifactDescription = async () => {
+        if (!state.currentArtifactName) return;
+        const artifact = artifacts[state.currentArtifactName];
+        if (!artifact) return;
+
+        setIsSpeaking(true);
+        toast({ title: 'المرشد الصوتي يتحدث...', description: 'جاري توليد قصة شيقة عن القطعة الأثرية.' });
+        
+        try {
+            // Use the new storyteller flow
+            const result = await getStorytellerAudio({ title: artifact.title, description: artifact.description });
+            if (result.error || !result.media) {
+                throw new Error(result.error || 'لم يتم إرجاع أي مقطع صوتي.');
+            }
+            const audio = new Audio(result.media);
+            audio.play();
+            audio.onended = () => setIsSpeaking(false);
+            toast({ title: 'تم!', description: `المرشد يروي قصة: "${artifact.title}"` });
+        } catch (error) {
+            console.error("Error playing audio:", error);
+            toast({
+                variant: 'destructive',
+                title: '❌ خطأ في المرشد الصوتي',
+                description: (error as Error).message,
+            });
+            setIsSpeaking(false);
+        }
+    };
+
+    const updateReportContent = useCallback(() => {
+        const modal = reportModalRef.current;
+        if (!modal) return;
+
+        const statusListContainer = modal.querySelector('#artifact-status-list');
+        if(!statusListContainer) return;
+        
+        statusListContainer.innerHTML = '';
+        let exploredCount = 0;
+        let isGoalAchieved = false;
+
+        Object.entries(artifacts).forEach(([name, data]) => {
+            if (data.isExplored) {
+                exploredCount++;
+                if (data.goal) isGoalAchieved = true;
+            }
+            const item = document.createElement('div');
+            item.className = 'artifact-status-item';
+            const statusHtml = data.isExplored ? `<span class="achieved-icon"><i class="fas fa-check-circle ml-1"></i> تم الاستكشاف</span>` : `<span class="pending-icon"><i class="fas fa-
